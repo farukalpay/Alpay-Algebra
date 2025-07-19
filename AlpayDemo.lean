@@ -161,4 +161,82 @@ open EvenPrimeState
 #eval outcomeAt 1    -- ⇒ refuterWins
 #eval outcomeAt 2    -- ⇒ refuterWins (already fixed)
 
+/-───────────────────────────────────────────────────────────────────────────-/
+/- 4.  Waveform Fixed-Point Encoder                                           -/
+/-───────────────────────────────────────────────────────────────────────────-/
+
+import Mathlib
+import Mathlib.Analysis.NormedSpace.Banach     -- Banach fixed-point lemma
+
+open scoped BigOperators
+
+universe u
+
+variable {Σ : Type u} [Fintype Σ]               -- finite alphabet
+variable {H : Type} [NormedAddCommGroup H]       -- real Hilbert space
+          [InnerProductSpace ℝ H] [CompleteSpace H]
+
+/-- Embeddings: one waveform per character.                     -/
+abbrev Emb : Type _ := Σ → H
+
+/-- `φ` is the *seed* family of waveforms introduced in §2 of the note. -/
+variable (φ : Emb)
+
+/-- Contraction operator `Ψ : Emb → Emb`,  
+    `Ψ E = ½ φ + ½ E` (notation: `Psi`).                             -/
+@[inline] def Psi (E : Emb) : Emb := fun c ↦ (1/2 : ℝ) • φ c + (1/2) • E c
+
+/-- `φ` itself is a fixed point: `Ψ φ = φ`.                         -/
+lemma Psi_fixed : Psi φ φ = φ := by
+  funext c; simp [Psi, smul_add, add_comm]
+
+/-- **Contractivity** in the `‖·‖∞` norm.  
+    For any embeddings `E F`:  
+    `‖Ψ E − Ψ F‖∞ ≤ ½ · ‖E − F‖∞`.                             -/
+lemma Psi_contracts (E F : Emb) :
+    ‖fun c ↦ Psi φ E c - Psi φ F c‖_∞ ≤ (1/2 : ℝ) * ‖fun c ↦ E c - F c‖_∞ := by
+  -- pointwise half-scaling ⇒ sup-norm half-scaling
+  simp [Psi, sub_eq, pi.Linfty_norm_def, Finset.sup_mul] using
+    Finset.sup_mono (fun c _ ↦ by
+      have : ‖(1 / 2 : ℝ) • (E c - F c)‖ = (1 / 2) * ‖E c - F c‖ := by
+        simpa using norm_smul _ _
+      simpa [sub_eq] using this.le)
+
+/-- **Banach fixed-point theorem**:  
+    `Ψ` is a `½`-contraction on complete metric space `Emb`,  
+    hence has a *unique* fixed point  `E∞`.                         -/
+noncomputable def E∞ : Emb :=
+  (Metric.banachFixedPoint (Psi φ) (by
+      -- Provide the Lipschitz constant `ρ = ½` as a real number in `(0,1)`.
+      refine ⟨(1/2 : ℝ), by norm_num, ?_⟩⟩)
+    (Psi_contracts φ)).val
+
+/-- `E∞` is indeed fixed.                                           -/
+lemma E∞_is_fixed : Psi φ (E∞ φ) = E∞ φ :=
+  (Metric.banachFixedPoint_is_fixed _ _).val
+
+/-- **Uniqueness**: any fixed point of `Ψ` equals `E∞`.             -/
+lemma fixed_point_unique {E : Emb} (h : Psi φ E = E) : E = E∞ φ := by
+  have h' : dist E (E∞ φ) = 0 := by
+    -- contractivity → geometric convergence → limit = 0
+    simpa using
+      Metric.banachFixedPoint_dist_eq_zero (Psi φ) (Psi_contracts φ) h (E∞_is_fixed φ)
+  simpa using (dist_eq_zero).1 h'
+
+/-───────────────────────────────────────────────────────────────────────────-/
+/-  Encoding words by time-shifted convolutions (formal skeleton only).    -/
+/-───────────────────────────────────────────────────────────────────────────-/
+
+variable (Δ : ℝ)                    -- fixed lag between characters
+noncomputable abbrev shift (τ : ℝ) (x : H) : H := sorry
+noncomputable abbrev conv  (x y : H)        : H := sorry
+
+/-- Recursive *word encoder*  `encode : List Σ → H`.               -/
+noncomputable def encode : List Σ → H
+| []      => 0
+| c :: cs =>
+    let head := shift Δ 0          (E∞ φ c)
+    let tail := shift Δ Δ.toReal   (encode cs)
+    conv head tail                 -- formal convolution placeholder
+
 end TransGame
